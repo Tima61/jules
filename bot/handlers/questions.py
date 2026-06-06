@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from bot.keyboards.client import get_textile_types_kb, get_delivery_kb
+from bot.keyboards.client import get_textile_types_kb, get_delivery_kb, get_cancel_kb
 from bot.database.db import async_session
 from bot.database.models import Client
 from bot.config import ADMIN_IDS
@@ -20,6 +20,14 @@ class SurveyStates(StatesGroup):
     textile_type = State()
     delivery_required = State()
 
+@client_router.message(StateFilter(SurveyStates), F.text == "❌ Отменить опрос")
+async def cancel_survey(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "Опрос отменен. Вы можете начать заново с помощью команды /start.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
 @client_router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await message.answer(
@@ -34,19 +42,35 @@ async def cmd_start(message: Message, state: FSMContext):
 @client_router.message(StateFilter(SurveyStates.company_name), F.text)
 async def process_company_name(message: Message, state: FSMContext):
     await state.update_data(company_name=message.text)
-    await message.answer("Отлично! Как к вам обращаться? (ФИО или Имя контактного лица)")
+    await message.answer(
+        "Отлично! Как к вам обращаться? (ФИО или Имя контактного лица)",
+        reply_markup=get_cancel_kb()
+    )
     await state.set_state(SurveyStates.contact_person)
 
 @client_router.message(StateFilter(SurveyStates.contact_person), F.text)
 async def process_contact_person(message: Message, state: FSMContext):
     await state.update_data(contact_person=message.text)
-    await message.answer("Пожалуйста, укажите ваш номер телефона для связи:")
+    await message.answer(
+        "Пожалуйста, укажите ваш номер телефона для связи:",
+        reply_markup=get_cancel_kb()
+    )
     await state.set_state(SurveyStates.phone_number)
 
 @client_router.message(StateFilter(SurveyStates.phone_number), F.text)
 async def process_phone_number(message: Message, state: FSMContext):
-    await state.update_data(phone_number=message.text)
-    await message.answer("Укажите примерный объем стирки в неделю (в килограммах). Например: 100")
+    phone_text = message.text.strip()
+    # Simple validation: allow only digits, spaces, hyphens, parentheses and +
+    valid_chars = set("0123456789+ -()")
+    if not all(c in valid_chars for c in phone_text) or not any(c.isdigit() for c in phone_text):
+        await message.answer("Пожалуйста, введите корректный номер телефона (только цифры и знак +).")
+        return
+
+    await state.update_data(phone_number=phone_text)
+    await message.answer(
+        "Укажите примерный объем стирки в неделю (в килограммах). Например: 100",
+        reply_markup=get_cancel_kb()
+    )
     await state.set_state(SurveyStates.volume_kg)
 
 @client_router.message(StateFilter(SurveyStates.volume_kg), F.text)
