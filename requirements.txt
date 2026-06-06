@@ -1,0 +1,6 @@
+aiogram>=3.4.0
+SQLAlchemy>=2.0.0
+aiosqlite
+python-dotenv
+pandas
+openpyxl
