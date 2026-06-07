@@ -10,9 +10,14 @@ import os
 from bot.config import ADMIN_IDS
 import asyncio
 
-from bot.keyboards.admin import get_admin_main_kb, get_broadcast_confirm_kb
+from bot.keyboards.admin import (
+    get_admin_main_kb, get_broadcast_confirm_kb,
+    get_clients_list_kb, get_client_card_kb
+)
 from bot.database.db import async_session
 from bot.database.models import Client
+from sqlalchemy import func
+import math
 from bot.utils.export import generate_excel_report
 from bot.utils.analytics import generate_analytics_charts
 import html
@@ -26,6 +31,15 @@ class AdminStates(StatesGroup):
 admin_router.message.filter(F.from_user.id.in_(ADMIN_IDS))
 admin_router.callback_query.filter(F.from_user.id.in_(ADMIN_IDS))
 
+@admin_router.callback_query(F.data == "admin_main_menu")
+async def process_admin_main_menu(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🛠 <b>Панель администратора</b>\n\nВыберите нужное действие:",
+        reply_markup=get_admin_main_kb(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
 @admin_router.message(Command("admin"))
 async def cmd_admin(message: Message):
     await message.answer(
@@ -33,6 +47,131 @@ async def cmd_admin(message: Message):
         reply_markup=get_admin_main_kb(),
         parse_mode="HTML"
     )
+
+# --- CRM Navigation ---
+PAGE_SIZE = 5
+
+@admin_router.callback_query(F.data.startswith("crm_list_"))
+async def process_crm_list(callback: CallbackQuery):
+    page = int(callback.data.split("_")[2])
+
+    async with async_session() as session:
+        # Get total count
+        count_result = await session.execute(select(func.count(Client.id)))
+        total_count = count_result.scalar()
+
+        if total_count == 0:
+            await callback.answer("База клиентов пуста.")
+            return
+
+        total_pages = math.ceil(total_count / PAGE_SIZE)
+
+        # Get clients for current page
+        result = await session.execute(
+            select(Client).order_by(Client.created_at.desc()).offset(page * PAGE_SIZE).limit(PAGE_SIZE)
+        )
+        clients = result.scalars().all()
+
+    text = f"🗂 <b>Управление клиентами (CRM)</b>\n<i>Страница {page + 1} из {total_pages}</i>\n\nВыберите клиента для просмотра и редактирования:"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_clients_list_kb(clients, page, total_pages),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@admin_router.callback_query(F.data.startswith("crm_card_"))
+async def process_crm_card(callback: CallbackQuery):
+    parts = callback.data.split("_")
+    client_id = int(parts[2])
+    current_page = int(parts[3])
+
+    async with async_session() as session:
+        result = await session.execute(select(Client).where(Client.id == client_id))
+        client = result.scalar_one_or_none()
+
+    if not client:
+        await callback.answer("Клиент не найден.")
+        return
+
+    delivery_str = "Да" if client.delivery_required else "Нет"
+    text = (
+        f"📇 <b>Карточка клиента #{client.id}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🏢 <b>Компания:</b> {html.escape(client.company_name)}\n"
+        f"👤 <b>Контакт:</b> {html.escape(client.contact_person)}\n"
+        f"📞 <b>Телефон:</b> {html.escape(client.phone_number)}\n"
+        f"⚖️ <b>Объем:</b> {client.volume_kg} кг/нед.\n"
+        f"👕 <b>Тип:</b> {html.escape(client.textile_type)}\n"
+        f"🚚 <b>Доставка:</b> {delivery_str}\n"
+        f"🔗 <b>Юзернейм:</b> @{html.escape(client.username) if client.username else 'Нет'}\n"
+        f"📅 <b>Дата:</b> {client.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Текущий статус: <b>{client.status}</b>\n\n"
+        f"Изменить статус:"
+    )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_client_card_kb(client.id, current_page),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@admin_router.callback_query(F.data.startswith("crm_status_"))
+async def process_crm_status_change(callback: CallbackQuery):
+    parts = callback.data.split("_")
+    action = parts[2]
+    client_id = int(parts[3])
+    current_page = int(parts[4])
+
+    status_map = {
+        "new": "🆕 Новый",
+        "contract": "✅ Договор",
+        "reject": "❌ Отказ"
+    }
+
+    new_status = status_map.get(action)
+    if not new_status:
+        await callback.answer("Неизвестный статус.")
+        return
+
+    async with async_session() as session:
+        result = await session.execute(select(Client).where(Client.id == client_id))
+        client = result.scalar_one_or_none()
+        if client:
+            client.status = new_status
+            await session.commit()
+            await callback.answer(f"Статус изменен на {new_status}")
+
+            # Refresh card
+            delivery_str = "Да" if client.delivery_required else "Нет"
+            text = (
+                f"📇 <b>Карточка клиента #{client.id}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"🏢 <b>Компания:</b> {html.escape(client.company_name)}\n"
+                f"👤 <b>Контакт:</b> {html.escape(client.contact_person)}\n"
+                f"📞 <b>Телефон:</b> {html.escape(client.phone_number)}\n"
+                f"⚖️ <b>Объем:</b> {client.volume_kg} кг/нед.\n"
+                f"👕 <b>Тип:</b> {html.escape(client.textile_type)}\n"
+                f"🚚 <b>Доставка:</b> {delivery_str}\n"
+                f"🔗 <b>Юзернейм:</b> @{html.escape(client.username) if client.username else 'Нет'}\n"
+                f"📅 <b>Дата:</b> {client.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Текущий статус: <b>{client.status}</b>\n\n"
+                f"Изменить статус:"
+            )
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=get_client_card_kb(client.id, current_page),
+                parse_mode="HTML"
+            )
+        else:
+            await callback.answer("Клиент не найден.")
+
+# --- Legacy list export handlers ---
 
 @admin_router.callback_query(F.data == "admin_list_users")
 async def process_list_users(callback: CallbackQuery):
