@@ -12,6 +12,7 @@ from bot.keyboards.client import (
     get_summary_kb,
     get_edit_fields_kb
 )
+from bot.keyboards.admin import get_user_status_kb
 from bot.database.db import async_session
 from bot.database.models import Client
 from bot.config import ADMIN_IDS
@@ -253,7 +254,12 @@ async def submit_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot)
 
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
+            await bot.send_message(
+                chat_id=admin_id,
+                text=admin_msg,
+                parse_mode="HTML",
+                reply_markup=get_user_status_kb(new_client.id)
+            )
         except Exception as e:
             print(f"Failed to send notification to admin {admin_id}: {e}")
 
