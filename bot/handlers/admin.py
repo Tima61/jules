@@ -96,9 +96,11 @@ async def process_broadcast_text(message: Message, state: FSMContext):
         await message.answer("Рассылка отменена.")
         return
 
-    await state.update_data(broadcast_text=message.text)
+    formatted_text = f"📢 <b>ИНФОРМАЦИОННАЯ РАССЫЛКА</b>\n━━━━━━━━━━━━━━━━━━\n{message.text}"
 
-    preview_text = "<b>Превью рассылки:</b>\n\n" + message.text
+    await state.update_data(broadcast_text=formatted_text)
+
+    preview_text = "<b>Превью рассылки:</b>\n\n" + formatted_text
 
     try:
         await message.answer(
