@@ -8,10 +8,13 @@ from sqlalchemy import select
 import os
 
 from bot.config import ADMIN_IDS
+import asyncio
+
 from bot.keyboards.admin import get_admin_main_kb, get_broadcast_confirm_kb
 from bot.database.db import async_session
 from bot.database.models import Client
 from bot.utils.export import generate_excel_report
+from bot.utils.analytics import generate_analytics_charts
 import html
 
 admin_router = Router()
@@ -46,7 +49,7 @@ async def process_list_users(callback: CallbackQuery):
     for c in clients:
         text += (
             f"🔸 <b>{html.escape(c.company_name)}</b> ({html.escape(c.contact_person)})\n"
-            f"📞 {html.escape(c.phone_number)} | ⚖️ {c.volume_kg} кг\n"
+            f"📞 {html.escape(c.phone_number)} | ⚖️ {c.volume_kg} кг | {c.status}\n"
         )
 
         if len(text) > 3800:
@@ -141,3 +144,89 @@ async def broadcast_start_cb(callback: CallbackQuery, state: FSMContext, bot: Bo
 
     await callback.message.answer(f"Рассылка завершена. Успешно отправлено сообщений: {success_count}")
     await callback.answer()
+
+@admin_router.callback_query(F.data.startswith("status_"))
+async def update_client_status(callback: CallbackQuery):
+    action = callback.data.split("_")[1]
+    client_id = int(callback.data.split("_")[2])
+
+    status_map = {
+        "new": "🆕 Новый",
+        "contract": "✅ Договор",
+        "reject": "❌ Отказ"
+    }
+
+    new_status = status_map.get(action)
+    if not new_status:
+        await callback.answer("Неизвестный статус.")
+        return
+
+    async with async_session() as session:
+        result = await session.execute(select(Client).where(Client.id == client_id))
+        client = result.scalar_one_or_none()
+        if client:
+            client.status = new_status
+            await session.commit()
+
+            # Update the message text to reflect new status. Assuming it's part of the notification msg
+            msg_text = callback.message.html_text
+            if msg_text:
+                await callback.message.edit_text(
+                    msg_text + f"\n\n<b>Статус изменен на: {new_status}</b>",
+                    parse_mode="HTML",
+                    reply_markup=None # Remove buttons after status selection
+                )
+            await callback.answer(f"Статус изменен на {new_status}")
+        else:
+            await callback.answer("Клиент не найден.")
+
+@admin_router.callback_query(F.data == "admin_analytics")
+async def process_admin_analytics(callback: CallbackQuery):
+    # Send initial loading message
+    loading_msg = await callback.message.answer("Генерация графиков: [⬛⬜⬜⬜⬜] 20%")
+    await callback.answer()
+
+    async def animate_progress():
+        frames = [
+            "[⬛⬛⬜⬜⬜] 40%",
+            "[⬛⬛⬛⬜⬜] 60%",
+            "[⬛⬛⬛⬛⬜] 80%",
+            "[⬛⬛⬛⬛⬛] 100%"
+        ]
+        for frame in frames:
+            try:
+                await asyncio.sleep(0.5)
+                await loading_msg.edit_text(f"Генерация графиков: {frame}")
+            except Exception:
+                pass
+
+    progress_task = asyncio.create_task(animate_progress())
+
+    async with async_session() as session:
+        result = await session.execute(select(Client))
+        clients = result.scalars().all()
+
+    clients_data = []
+    for c in clients:
+        clients_data.append({
+            'status': c.status,
+            'company_name': c.company_name,
+            'volume_kg': c.volume_kg,
+            'textile_type': c.textile_type
+        })
+
+    # Generate charts in a separate thread
+    charts = await asyncio.to_thread(generate_analytics_charts, clients_data)
+
+    progress_task.cancel()
+    await loading_msg.delete()
+
+    if not charts:
+        await callback.message.answer("Не удалось сгенерировать графики (возможно, нет данных).")
+        return
+
+    # Send charts
+    # aiogram supports sending multiple media in a group, but for BufferedInputFile we need to prepare them.
+    # We will send them one by one for simplicity and clarity, or as a group. Let's send them one by one.
+    for chart in charts:
+        await callback.message.answer_photo(photo=chart)

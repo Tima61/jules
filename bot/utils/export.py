@@ -28,6 +28,7 @@ async def generate_excel_report() -> str | None:
             "Объем (кг/нед)": c.volume_kg,
             "Тип текстиля": c.textile_type,
             "Требуется доставка": "Да" if c.delivery_required else "Нет",
+            "Статус": c.status,
             "Дата заявки": c.created_at.strftime("%Y-%m-%d %H:%M:%S")
         })
 
