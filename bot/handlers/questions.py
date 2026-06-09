@@ -114,7 +114,7 @@ async def show_summary(message: Message, state: FSMContext):
     address_str = html.escape(data.get('address', '')) if data.get('address') else "-"
 
     summary_text = (
-        "📋 <b>Пожалуйста, проверьте ваши данные:</b>\n\n"
+        "📋 <b>Почти готово! Давайте проверим ваши данные перед отправкой заявки:</b>\n\n"
         f"🏢 <b>Компания:</b> {html.escape(data.get('company_name', ''))}\n"
         f"👤 <b>Контакт:</b> {html.escape(data.get('contact_person', ''))}\n"
         f"📞 <b>Телефон:</b> {html.escape(data.get('phone_number', ''))}\n"
@@ -122,7 +122,7 @@ async def show_summary(message: Message, state: FSMContext):
         f"👕 <b>Тип:</b> {html.escape(data.get('textile_type', ''))}\n"
         f"🚚 <b>Доставка:</b> {delivery_str}\n"
         f"📍 <b>Адрес:</b> {address_str}\n\n"
-        "Всё верно?"
+        "💡 <i>Подтвердите отправку ниже, и мы моментально рассчитаем предварительное предложение! Если нашли ошибку — нажмите «Изменить данные».</i>"
     )
 
     # Remove any reply keyboards
@@ -143,7 +143,7 @@ async def process_company_name(message: Message, state: FSMContext, bot: Bot):
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         await asyncio.sleep(0.6)
         await message.answer(
-            "📊 Шаг 2 из 6 [▓▓░░░░] 33%\n\n"
+            "📊 Шаг 2 из 7 [▓▓░░░░░] 28%\n\n"
             "Отлично! Как к вам обращаться? (ФИО или Имя контактного лица)",
             reply_markup=get_cancel_kb()
         )
@@ -160,7 +160,7 @@ async def process_contact_person(message: Message, state: FSMContext, bot: Bot):
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         await asyncio.sleep(0.6)
         await message.answer(
-            "📊 Шаг 3 из 6 [▓▓▓░░░] 50%\n\n"
+            "📊 Шаг 3 из 7 [▓▓▓░░░░] 42%\n\n"
             "Пожалуйста, укажите ваш номер телефона для связи:",
             reply_markup=get_cancel_kb()
         )
@@ -184,7 +184,7 @@ async def process_phone_number(message: Message, state: FSMContext, bot: Bot):
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         await asyncio.sleep(0.6)
         await message.answer(
-            "📊 Шаг 4 из 6 [▓▓▓▓░░] 67%\n\n"
+            "📊 Шаг 4 из 7 [▓▓▓▓░░░] 57%\n\n"
             "Укажите примерный объем стирки в неделю (в килограммах). Например: 100",
             reply_markup=get_cancel_kb()
         )
@@ -205,7 +205,7 @@ async def process_volume_kg(message: Message, state: FSMContext, bot: Bot):
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         await asyncio.sleep(0.6)
         await message.answer(
-            "📊 Шаг 5 из 6 [▓▓▓▓▓░] 83%\n\n"
+            "📊 Шаг 5 из 7 [▓▓▓▓▓░░] 71%\n\n"
             "Какой тип текстиля вы планируете сдавать в стирку?",
             reply_markup=get_textile_types_kb()
         )
@@ -222,7 +222,7 @@ async def process_textile_type(message: Message, state: FSMContext, bot: Bot):
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         await asyncio.sleep(0.6)
         await message.answer(
-            "📊 Шаг 6 из 6 [▓▓▓▓▓▓] 100%\n\n"
+            "📊 Шаг 6 из 7 [▓▓▓▓▓▓░] 85%\n\n"
             "Требуется ли вам доставка (забор и возврат белья)?",
             reply_markup=get_delivery_kb()
         )
@@ -413,24 +413,26 @@ async def process_edit_field_cb(callback: CallbackQuery, state: FSMContext, bot:
     await bot.send_chat_action(chat_id=callback.message.chat.id, action="typing")
     await asyncio.sleep(0.6)
 
-    if field_to_edit == "company_name":
-        await callback.message.answer("📊 Шаг 1 из 6 [▓░░░░░] 17%\n\n✏️ <b>Редактирование:</b>\nВведите новое название компании / организации:", reply_markup=get_cancel_kb(), parse_mode="HTML")
-        await state.set_state(SurveyStates.company_name)
-    elif field_to_edit == "contact_person":
-        await callback.message.answer("📊 Шаг 2 из 6 [▓▓░░░░] 33%\n\n✏️ <b>Редактирование:</b>\nВведите новое ФИО или Имя контактного лица:", reply_markup=get_cancel_kb(), parse_mode="HTML")
-        await state.set_state(SurveyStates.contact_person)
-    elif field_to_edit == "phone_number":
-        await callback.message.answer("📊 Шаг 3 из 6 [▓▓▓░░░] 50%\n\n✏️ <b>Редактирование:</b>\nВведите новый номер телефона для связи:", reply_markup=get_cancel_kb(), parse_mode="HTML")
-        await state.set_state(SurveyStates.phone_number)
-    elif field_to_edit == "volume_kg":
-        await callback.message.answer("📊 Шаг 4 из 6 [▓▓▓▓░░] 67%\n\n✏️ <b>Редактирование:</b>\nУкажите новый примерный объем стирки в неделю (в килограммах):", reply_markup=get_cancel_kb(), parse_mode="HTML")
-        await state.set_state(SurveyStates.volume_kg)
-    elif field_to_edit == "textile_type":
-        await callback.message.answer("📊 Шаг 5 из 6 [▓▓▓▓▓░] 83%\n\n✏️ <b>Редактирование:</b>\nВыберите новый тип текстиля:", reply_markup=get_textile_types_kb(), parse_mode="HTML")
-        await state.set_state(SurveyStates.textile_type)
-    elif field_to_edit == "delivery_required":
-        await callback.message.answer("📊 Шаг 6 из 7 [▓▓▓▓▓░] 85%\n\n✏️ <b>Редактирование:</b>\nТребуется ли вам доставка (забор и возврат белья)?", reply_markup=get_delivery_kb(), parse_mode="HTML")
-        await state.set_state(SurveyStates.delivery_required)
-    elif field_to_edit == "address":
-        await callback.message.answer("📍 Шаг 7 из 7 [▓▓▓▓▓▓] 100%\n\n✏️ <b>Редактирование:</b>\nУкажите адрес забора белья текстовым сообщением или отправьте геопозицию:", reply_markup=get_location_kb(), parse_mode="HTML")
-        await state.set_state(SurveyStates.address)
+    edit_config = {
+        "company_name": ("📊 Шаг 1 из 7 [▓░░░░░░] 14%\n\n✏️ <b>Редактирование:</b>\nВведите новое название компании / организации:", get_cancel_kb(), SurveyStates.company_name),
+        "contact_person": ("📊 Шаг 2 из 7 [▓▓░░░░░] 28%\n\n✏️ <b>Редактирование:</b>\nВведите новое ФИО или Имя контактного лица:", get_cancel_kb(), SurveyStates.contact_person),
+        "phone_number": ("📊 Шаг 3 из 7 [▓▓▓░░░░] 42%\n\n✏️ <b>Редактирование:</b>\nВведите новый номер телефона для связи:", get_cancel_kb(), SurveyStates.phone_number),
+        "volume_kg": ("📊 Шаг 4 из 7 [▓▓▓▓░░░] 57%\n\n✏️ <b>Редактирование:</b>\nУкажите новый примерный объем стирки в неделю (в килограммах):", get_cancel_kb(), SurveyStates.volume_kg),
+        "textile_type": ("📊 Шаг 5 из 7 [▓▓▓▓▓░░] 71%\n\n✏️ <b>Редактирование:</b>\nВыберите новый тип текстиля:", get_textile_types_kb(), SurveyStates.textile_type),
+        "delivery_required": ("📊 Шаг 6 из 7 [▓▓▓▓▓▓░] 85%\n\n✏️ <b>Редактирование:</b>\nТребуется ли вам доставка (забор и возврат белья)?", get_delivery_kb(), SurveyStates.delivery_required),
+        "address": ("📍 Шаг 7 из 7 [▓▓▓▓▓▓▓] 100%\n\n✏️ <b>Редактирование:</b>\nУкажите адрес забора белья текстовым сообщением или отправьте геопозицию:", get_location_kb(), SurveyStates.address)
+    }
+
+    if field_to_edit in edit_config:
+        text, markup, state_to_set = edit_config[field_to_edit]
+
+        # Add price estimation breakdown if volume_kg is set
+        if field_to_edit == "volume_kg":
+            data = await state.get_data()
+            if data.get('volume_kg'):
+                volume = data['volume_kg']
+                price = volume * 150
+                text += f"\n\n💰 <b>Оценочная стоимость:</b> ~{price} руб/нед."
+
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+        await state.set_state(state_to_set)
