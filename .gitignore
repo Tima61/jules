@@ -23,3 +23,8 @@ bot_output.log
 # Reports
 *.xlsx
 *.csv
+*.pdf
+
+# Temp files
+temp/
+bot/assets/temp/

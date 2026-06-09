@@ -275,6 +275,27 @@ async def process_address(message: Message, state: FSMContext):
 # --- Summary and Edit Callbacks ---
 @client_router.callback_query(StateFilter(SurveyStates.confirm), F.data == "submit_survey")
 async def submit_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    await callback.answer()
+
+    # Animate loading progress bar while generating PDF
+    loading_msg = await callback.message.edit_text("⏳ Генерирую коммерческое предложение [⬛⬜⬜⬜⬜] 20%")
+
+    async def animate_progress():
+        frames = [
+            "⏳ Генерирую коммерческое предложение [⬛⬛⬜⬜⬜] 40%",
+            "⏳ Генерирую коммерческое предложение [⬛⬛⬛⬜⬜] 60%",
+            "⏳ Генерирую коммерческое предложение [⬛⬛⬛⬛⬜] 80%",
+            "⏳ Генерирую коммерческое предложение [⬛⬛⬛⬛⬛] 100%"
+        ]
+        for frame in frames:
+            try:
+                await asyncio.sleep(0.5)
+                await loading_msg.edit_text(frame)
+            except Exception:
+                pass
+
+    progress_task = asyncio.create_task(animate_progress())
+
     data = await state.get_data()
 
     # Save to database
@@ -305,7 +326,9 @@ async def submit_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot)
 
     pdf_path = await asyncio.to_thread(generate_commercial_proposal, data, map_img_path, distance)
 
-    await callback.message.edit_text(
+    progress_task.cancel()
+
+    await loading_msg.edit_text(
         "✅ <b>Заявка успешно отправлена!</b> 🎉\n"
         "Мы подготовили для вас предварительное коммерческое предложение (см. документ ниже).\n"
         "Наш менеджер свяжется с вами в ближайшее время.",
@@ -352,11 +375,11 @@ async def submit_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot)
             print(f"Failed to send notification to admin {admin_id}: {e}")
 
     await state.clear()
-    await callback.answer()
 
     # Cleanup temp files
     try:
-        os.remove(pdf_path)
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
         if map_img_path and os.path.exists(map_img_path):
             os.remove(map_img_path)
     except Exception as e:
