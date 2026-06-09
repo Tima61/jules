@@ -23,8 +23,12 @@ bot_output.log
 # Reports
 *.xlsx
 *.csv
-*.pdf
-
-# Temp files
+# Временные файлы бота и генерации документов
 temp/
-bot/assets/temp/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# Исключение, чтобы не удалить важные ассеты (если лого лежит там)
+!bot/assets/logo.png
