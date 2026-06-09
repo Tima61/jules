@@ -17,6 +17,7 @@ class Client(Base):
     volume_kg: Mapped[int] = mapped_column(Integer, nullable=False)
     textile_type: Mapped[str] = mapped_column(String, nullable=False)
     delivery_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    address: Mapped[str] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, default="🆕 Новый", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

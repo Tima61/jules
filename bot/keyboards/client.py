@@ -32,6 +32,7 @@ def get_edit_fields_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⚖️ Объем стирки", callback_data="edit_field_volume_kg")],
             [InlineKeyboardButton(text="👕 Тип текстиля", callback_data="edit_field_textile_type")],
             [InlineKeyboardButton(text="🚚 Доставка", callback_data="edit_field_delivery_required")],
+            [InlineKeyboardButton(text="📍 Адрес доставки", callback_data="edit_field_address")],
             [InlineKeyboardButton(text="🔙 Назад к проверке", callback_data="back_to_summary")]
         ]
     )
@@ -70,5 +71,17 @@ def get_delivery_kb() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
         input_field_placeholder="Требуется ли доставка?"
+    )
+    return kb
+
+def get_location_kb() -> ReplyKeyboardMarkup:
+    """Keyboard for requesting location"""
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📍 Отправить геопозицию", request_location=True)],
+            [KeyboardButton(text="❌ Отменить опрос")]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Укажите адрес или отправьте геопозицию"
     )
     return kb

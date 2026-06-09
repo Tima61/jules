@@ -28,6 +28,13 @@ async def init_db():
             # Column already exists or another DB error
             pass
 
+        # Gracefully add the new 'address' column if it doesn't exist
+        try:
+            await conn.execute(text("ALTER TABLE clients ADD COLUMN address VARCHAR"))
+        except Exception as e:
+            # Column already exists or another DB error
+            pass
+
 async def get_session() -> AsyncSession:
     """Get async session"""
     async with async_session() as session:
