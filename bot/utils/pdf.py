@@ -57,7 +57,7 @@ def generate_commercial_proposal(client_data: dict, map_image_path: str | None, 
 
     # Title
     story.append(Paragraph("Коммерческое Предложение", title_style))
-    story.append(Paragraph('От: Прачечная "Чистый Степашка"', normal_style))
+    story.append(Paragraph('От: Прачечная "ЧИСТЫЙ СТЕПАШКА"', normal_style))
     story.append(Paragraph(f'Наш адрес: {BASE_ADDRESS}', normal_style))
     story.append(Spacer(1, 0.2*inch))
 
