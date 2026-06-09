@@ -17,6 +17,7 @@ from bot.database.db import async_session
 from bot.database.models import Client
 from bot.config import ADMIN_IDS
 import html
+import asyncio
 
 client_router = Router()
 
@@ -52,14 +53,17 @@ async def cancel_survey(message: Message, state: FSMContext):
 
 # --- Main Menu Callbacks ---
 @client_router.callback_query(F.data == "start_survey")
-async def start_survey_cb(callback: CallbackQuery, state: FSMContext):
+async def start_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    await callback.answer()
+    await bot.send_chat_action(chat_id=callback.message.chat.id, action="typing")
+    await asyncio.sleep(0.6)
     await callback.message.answer(
+        "📊 Шаг 1 из 6 [▓░░░░░] 17%\n\n"
         "Чтобы мы могли подготовить для вас коммерческое предложение, "
         "пожалуйста, ответьте на несколько вопросов.\n\n"
         "Как называется ваша компания / организация?"
     )
     await state.set_state(SurveyStates.company_name)
-    await callback.answer()
 
 @client_router.callback_query(F.data == "info_about")
 async def info_about_cb(callback: CallbackQuery):
@@ -121,35 +125,41 @@ async def show_summary(message: Message, state: FSMContext):
     await state.set_state(SurveyStates.confirm)
 
 @client_router.message(StateFilter(SurveyStates.company_name), F.text)
-async def process_company_name(message: Message, state: FSMContext):
+async def process_company_name(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(company_name=message.text)
     data = await state.get_data()
     if data.get('is_editing'):
         await state.update_data(is_editing=False)
         await show_summary(message, state)
     else:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await asyncio.sleep(0.6)
         await message.answer(
+            "📊 Шаг 2 из 6 [▓▓░░░░] 33%\n\n"
             "Отлично! Как к вам обращаться? (ФИО или Имя контактного лица)",
             reply_markup=get_cancel_kb()
         )
         await state.set_state(SurveyStates.contact_person)
 
 @client_router.message(StateFilter(SurveyStates.contact_person), F.text)
-async def process_contact_person(message: Message, state: FSMContext):
+async def process_contact_person(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(contact_person=message.text)
     data = await state.get_data()
     if data.get('is_editing'):
         await state.update_data(is_editing=False)
         await show_summary(message, state)
     else:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await asyncio.sleep(0.6)
         await message.answer(
+            "📊 Шаг 3 из 6 [▓▓▓░░░] 50%\n\n"
             "Пожалуйста, укажите ваш номер телефона для связи:",
             reply_markup=get_cancel_kb()
         )
         await state.set_state(SurveyStates.phone_number)
 
 @client_router.message(StateFilter(SurveyStates.phone_number), F.text)
-async def process_phone_number(message: Message, state: FSMContext):
+async def process_phone_number(message: Message, state: FSMContext, bot: Bot):
     phone_text = message.text.strip()
     # Simple validation: allow only digits, spaces, hyphens, parentheses and +
     valid_chars = set("0123456789+ -()")
@@ -163,14 +173,17 @@ async def process_phone_number(message: Message, state: FSMContext):
         await state.update_data(is_editing=False)
         await show_summary(message, state)
     else:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await asyncio.sleep(0.6)
         await message.answer(
+            "📊 Шаг 4 из 6 [▓▓▓▓░░] 67%\n\n"
             "Укажите примерный объем стирки в неделю (в килограммах). Например: 100",
             reply_markup=get_cancel_kb()
         )
         await state.set_state(SurveyStates.volume_kg)
 
 @client_router.message(StateFilter(SurveyStates.volume_kg), F.text)
-async def process_volume_kg(message: Message, state: FSMContext):
+async def process_volume_kg(message: Message, state: FSMContext, bot: Bot):
     if not message.text.isdigit():
         await message.answer("Пожалуйста, введите только число (например: 100).")
         return
@@ -181,21 +194,27 @@ async def process_volume_kg(message: Message, state: FSMContext):
         await state.update_data(is_editing=False)
         await show_summary(message, state)
     else:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await asyncio.sleep(0.6)
         await message.answer(
+            "📊 Шаг 5 из 6 [▓▓▓▓▓░] 83%\n\n"
             "Какой тип текстиля вы планируете сдавать в стирку?",
             reply_markup=get_textile_types_kb()
         )
         await state.set_state(SurveyStates.textile_type)
 
 @client_router.message(StateFilter(SurveyStates.textile_type), F.text)
-async def process_textile_type(message: Message, state: FSMContext):
+async def process_textile_type(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(textile_type=message.text)
     data = await state.get_data()
     if data.get('is_editing'):
         await state.update_data(is_editing=False)
         await show_summary(message, state)
     else:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await asyncio.sleep(0.6)
         await message.answer(
+            "📊 Шаг 6 из 6 [▓▓▓▓▓▓] 100%\n\n"
             "Требуется ли вам доставка (забор и возврат белья)?",
             reply_markup=get_delivery_kb()
         )
@@ -282,31 +301,33 @@ async def back_to_summary_cb(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @client_router.callback_query(StateFilter(SurveyStates.confirm), F.data.startswith("edit_field_"))
-async def process_edit_field_cb(callback: CallbackQuery, state: FSMContext):
+async def process_edit_field_cb(callback: CallbackQuery, state: FSMContext, bot: Bot):
     field_to_edit = callback.data.replace("edit_field_", "")
 
     await state.update_data(is_editing=True)
+    await callback.answer()
 
     # We must send a new message because ReplyKeyboardMarkups can't be added to CallbackQuery messages (only Inline)
     await callback.message.delete()
 
+    await bot.send_chat_action(chat_id=callback.message.chat.id, action="typing")
+    await asyncio.sleep(0.6)
+
     if field_to_edit == "company_name":
-        await callback.message.answer("Введите новое название компании / организации:", reply_markup=get_cancel_kb())
+        await callback.message.answer("📊 Шаг 1 из 6 [▓░░░░░] 17%\n\n✏️ <b>Редактирование:</b>\nВведите новое название компании / организации:", reply_markup=get_cancel_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.company_name)
     elif field_to_edit == "contact_person":
-        await callback.message.answer("Введите новое ФИО или Имя контактного лица:", reply_markup=get_cancel_kb())
+        await callback.message.answer("📊 Шаг 2 из 6 [▓▓░░░░] 33%\n\n✏️ <b>Редактирование:</b>\nВведите новое ФИО или Имя контактного лица:", reply_markup=get_cancel_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.contact_person)
     elif field_to_edit == "phone_number":
-        await callback.message.answer("Введите новый номер телефона для связи:", reply_markup=get_cancel_kb())
+        await callback.message.answer("📊 Шаг 3 из 6 [▓▓▓░░░] 50%\n\n✏️ <b>Редактирование:</b>\nВведите новый номер телефона для связи:", reply_markup=get_cancel_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.phone_number)
     elif field_to_edit == "volume_kg":
-        await callback.message.answer("Укажите новый примерный объем стирки в неделю (в килограммах):", reply_markup=get_cancel_kb())
+        await callback.message.answer("📊 Шаг 4 из 6 [▓▓▓▓░░] 67%\n\n✏️ <b>Редактирование:</b>\nУкажите новый примерный объем стирки в неделю (в килограммах):", reply_markup=get_cancel_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.volume_kg)
     elif field_to_edit == "textile_type":
-        await callback.message.answer("Выберите новый тип текстиля:", reply_markup=get_textile_types_kb())
+        await callback.message.answer("📊 Шаг 5 из 6 [▓▓▓▓▓░] 83%\n\n✏️ <b>Редактирование:</b>\nВыберите новый тип текстиля:", reply_markup=get_textile_types_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.textile_type)
     elif field_to_edit == "delivery_required":
-        await callback.message.answer("Требуется ли вам доставка (забор и возврат белья)?", reply_markup=get_delivery_kb())
+        await callback.message.answer("📊 Шаг 6 из 6 [▓▓▓▓▓▓] 100%\n\n✏️ <b>Редактирование:</b>\nТребуется ли вам доставка (забор и возврат белья)?", reply_markup=get_delivery_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.delivery_required)
-
-    await callback.answer()
