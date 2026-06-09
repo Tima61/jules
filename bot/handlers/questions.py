@@ -10,14 +10,19 @@ from bot.keyboards.client import (
     get_cancel_kb,
     get_main_menu_kb,
     get_summary_kb,
-    get_edit_fields_kb
+    get_edit_fields_kb,
+    get_location_kb
 )
 from bot.keyboards.admin import get_user_status_kb
 from bot.database.db import async_session
 from bot.database.models import Client
 from bot.config import ADMIN_IDS
+from bot.utils.maps import generate_route_map
+from bot.utils.pdf import generate_commercial_proposal
 import html
 import asyncio
+from aiogram.types import FSInputFile
+import os
 
 client_router = Router()
 
@@ -28,6 +33,7 @@ class SurveyStates(StatesGroup):
     volume_kg = State()
     textile_type = State()
     delivery_required = State()
+    address = State()
     confirm = State()
 
 async def show_main_menu(message: Message, state: FSMContext):
@@ -58,7 +64,7 @@ async def start_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await bot.send_chat_action(chat_id=callback.message.chat.id, action="typing")
     await asyncio.sleep(0.6)
     await callback.message.answer(
-        "📊 Шаг 1 из 6 [▓░░░░░] 17%\n\n"
+        "📊 Шаг 1 из 7 [▓░░░░░] 14%\n\n"
         "Чтобы мы могли подготовить для вас коммерческое предложение, "
         "пожалуйста, ответьте на несколько вопросов.\n\n"
         "Как называется ваша компания / организация?"
@@ -105,6 +111,7 @@ async def info_contacts_cb(callback: CallbackQuery):
 async def show_summary(message: Message, state: FSMContext):
     data = await state.get_data()
     delivery_str = "Да" if data.get('delivery_required') else "Нет"
+    address_str = html.escape(data.get('address', '')) if data.get('address') else "-"
 
     summary_text = (
         "📋 <b>Пожалуйста, проверьте ваши данные:</b>\n\n"
@@ -113,7 +120,8 @@ async def show_summary(message: Message, state: FSMContext):
         f"📞 <b>Телефон:</b> {html.escape(data.get('phone_number', ''))}\n"
         f"⚖️ <b>Объем:</b> {data.get('volume_kg', '')} кг/нед.\n"
         f"👕 <b>Тип:</b> {html.escape(data.get('textile_type', ''))}\n"
-        f"🚚 <b>Доставка:</b> {delivery_str}\n\n"
+        f"🚚 <b>Доставка:</b> {delivery_str}\n"
+        f"📍 <b>Адрес:</b> {address_str}\n\n"
         "Всё верно?"
     )
 
@@ -221,11 +229,42 @@ async def process_textile_type(message: Message, state: FSMContext, bot: Bot):
         await state.set_state(SurveyStates.delivery_required)
 
 @client_router.message(StateFilter(SurveyStates.delivery_required), F.text)
-async def process_delivery_required(message: Message, state: FSMContext):
+async def process_delivery_required(message: Message, state: FSMContext, bot: Bot):
     delivery_text = message.text.lower()
     delivery_required = "да" in delivery_text
 
     await state.update_data(delivery_required=delivery_required)
+
+    data = await state.get_data()
+
+    if delivery_required:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        await asyncio.sleep(0.6)
+        await message.answer(
+            "📍 Шаг 7 из 7 [▓▓▓▓▓▓] 100%\n\n"
+            "Пожалуйста, укажите адрес забора белья текстовым сообщением или отправьте геопозицию:",
+            reply_markup=get_location_kb()
+        )
+        await state.set_state(SurveyStates.address)
+    else:
+        await state.update_data(address=None)
+        if data.get('is_editing'):
+            await state.update_data(is_editing=False)
+        await show_summary(message, state)
+
+@client_router.message(StateFilter(SurveyStates.address))
+async def process_address(message: Message, state: FSMContext):
+    if message.location:
+        lat = message.location.latitude
+        lon = message.location.longitude
+        address = f"{lat},{lon}"
+    elif message.text:
+        address = message.text
+    else:
+        await message.answer("Пожалуйста, отправьте текстовый адрес или геопозицию.")
+        return
+
+    await state.update_data(address=address)
 
     data = await state.get_data()
     if data.get('is_editing'):
@@ -248,18 +287,39 @@ async def submit_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot)
             phone_number=data['phone_number'],
             volume_kg=data['volume_kg'],
             textile_type=data['textile_type'],
-            delivery_required=data['delivery_required']
+            delivery_required=data['delivery_required'],
+            address=data.get('address')
         )
         session.add(new_client)
         await session.commit()
 
+    # Map & PDF logic
+    map_img_path = None
+    distance = None
+    if data.get('delivery_required') and data.get('address'):
+        # Generate map off the main thread if possible, but geopy/requests might be fast enough
+        # We wrap in to_thread just in case
+        map_result = await asyncio.to_thread(generate_route_map, data['address'], callback.from_user.id)
+        if map_result:
+            map_img_path, distance = map_result
+
+    pdf_path = await asyncio.to_thread(generate_commercial_proposal, data, map_img_path, distance)
+
     await callback.message.edit_text(
         "✅ <b>Заявка успешно отправлена!</b> 🎉\n"
-        "Мы свяжемся с вами в ближайшее время для обсуждения деталей.",
+        "Мы подготовили для вас предварительное коммерческое предложение (см. документ ниже).\n"
+        "Наш менеджер свяжется с вами в ближайшее время.",
         parse_mode="HTML"
     )
 
+    pdf_doc = FSInputFile(pdf_path)
+    await callback.message.answer_document(
+        document=pdf_doc,
+        caption="Ваше коммерческое предложение 📄"
+    )
+
     # Notify admins
+    address_str = html.escape(data.get('address', '')) if data.get('address') else "-"
     admin_msg = (
         "🔔 <b>Новая заявка!</b>\n\n"
         f"🏢 <b>Компания:</b> {html.escape(data['company_name'])}\n"
@@ -268,22 +328,39 @@ async def submit_survey_cb(callback: CallbackQuery, state: FSMContext, bot: Bot)
         f"⚖️ <b>Объем:</b> {data['volume_kg']} кг/нед.\n"
         f"👕 <b>Тип:</b> {html.escape(data['textile_type'])}\n"
         f"🚚 <b>Доставка:</b> {'Да' if data['delivery_required'] else 'Нет'}\n"
+        f"📍 <b>Адрес:</b> {address_str}\n"
         f"🔗 <b>Пользователь:</b> @{html.escape(callback.from_user.username) if callback.from_user.username else 'Нет username'}"
     )
 
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(
+            # Send notification text
+            msg = await bot.send_message(
                 chat_id=admin_id,
                 text=admin_msg,
                 parse_mode="HTML",
                 reply_markup=get_user_status_kb(new_client.id)
+            )
+            # Send PDF to admin as well
+            admin_pdf_doc = FSInputFile(pdf_path)
+            await bot.send_document(
+                chat_id=admin_id,
+                document=admin_pdf_doc,
+                reply_to_message_id=msg.message_id
             )
         except Exception as e:
             print(f"Failed to send notification to admin {admin_id}: {e}")
 
     await state.clear()
     await callback.answer()
+
+    # Cleanup temp files
+    try:
+        os.remove(pdf_path)
+        if map_img_path and os.path.exists(map_img_path):
+            os.remove(map_img_path)
+    except Exception as e:
+        print(f"Failed to cleanup temp files: {e}")
 
 @client_router.callback_query(StateFilter(SurveyStates.confirm), F.data == "edit_survey")
 async def edit_survey_cb(callback: CallbackQuery):
@@ -329,5 +406,8 @@ async def process_edit_field_cb(callback: CallbackQuery, state: FSMContext, bot:
         await callback.message.answer("📊 Шаг 5 из 6 [▓▓▓▓▓░] 83%\n\n✏️ <b>Редактирование:</b>\nВыберите новый тип текстиля:", reply_markup=get_textile_types_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.textile_type)
     elif field_to_edit == "delivery_required":
-        await callback.message.answer("📊 Шаг 6 из 6 [▓▓▓▓▓▓] 100%\n\n✏️ <b>Редактирование:</b>\nТребуется ли вам доставка (забор и возврат белья)?", reply_markup=get_delivery_kb(), parse_mode="HTML")
+        await callback.message.answer("📊 Шаг 6 из 7 [▓▓▓▓▓░] 85%\n\n✏️ <b>Редактирование:</b>\nТребуется ли вам доставка (забор и возврат белья)?", reply_markup=get_delivery_kb(), parse_mode="HTML")
         await state.set_state(SurveyStates.delivery_required)
+    elif field_to_edit == "address":
+        await callback.message.answer("📍 Шаг 7 из 7 [▓▓▓▓▓▓] 100%\n\n✏️ <b>Редактирование:</b>\nУкажите адрес забора белья текстовым сообщением или отправьте геопозицию:", reply_markup=get_location_kb(), parse_mode="HTML")
+        await state.set_state(SurveyStates.address)

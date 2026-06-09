@@ -11,3 +11,7 @@ ADMIN_IDS_STR = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS = [int(admin_id.strip()) for admin_id in ADMIN_IDS_STR.split(",") if admin_id.strip().isdigit()]
 
 DB_URL = os.getenv("DB_URL", "sqlite+aiosqlite:///bot_database.db")
+
+BASE_ADDRESS = "Ростов-на-Дону, ул. Ченцова, 10а"
+# Format: (lat, lon)
+BASE_COORDS = (47.234394, 39.728956)
